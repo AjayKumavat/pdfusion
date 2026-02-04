@@ -4,20 +4,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OmniPDF - All-in-one PDF Tools</title>
+    <title>OmniPDF - Modern PDF Tools</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-light: #f8fafc;
+            --bg-dark: #020617;
+        }
         body {
             font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
         .glass {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
         }
         .dark .glass {
-            background: rgba(17, 24, 39, 0.7);
+            background: rgba(15, 23, 42, 0.8);
+        }
+        .card-shadow {
+            shadow-sm transition-shadow duration-300;
+        }
+        .card-shadow:hover {
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+        }
+        /* Prevents files from opening in new tab when dropped outside the zone */
+        html, body {
+            height: 100%;
+            overflow-x: hidden;
         }
     </style>
 <script type="importmap">
@@ -34,7 +50,7 @@
 </script>
 <link rel="stylesheet" href="/index.css">
 </head>
-<body class="bg-slate-50 text-slate-900 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100">
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased">
     <div id="root"></div>
 <script type="module" src="/index.tsx"></script>
 </body>
