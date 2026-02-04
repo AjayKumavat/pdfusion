@@ -70,7 +70,7 @@ For every supported operation:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/pdfusion.git
+git clone https://github.com/AjayKumavat/pdfusion.git
 
 # Navigate to project folder
 cd pdfusion
