@@ -21,11 +21,12 @@ import { ProcessingView } from './components/views/ProcessingView';
 import { ResultView } from './components/views/ResultView';
 
 export default function App() {
-  // Theme state
+  // Theme state: robustly initialize from localStorage or system preference
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark' || 
-        (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const storedTheme = localStorage.getItem('theme');
+      if (storedTheme) return storedTheme === 'dark';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
     return false;
   });
@@ -46,6 +47,7 @@ export default function App() {
   const [splitMode, setSplitMode] = useState<'single' | 'multiple'>('single');
   const [splitGroups, setSplitGroups] = useState<{ id: string; pages: number[] }[]>([]);
   const [organizeOrder, setOrganizeOrder] = useState<number[]>([]);
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
 
   // Effect to apply theme and handle global drag prevention
   useEffect(() => {
@@ -57,7 +59,9 @@ export default function App() {
       root.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+  }, [darkMode]);
 
+  useEffect(() => {
     const preventDefault = (e: DragEvent) => e.preventDefault();
     window.addEventListener('dragover', preventDefault);
     window.addEventListener('drop', preventDefault);
@@ -65,19 +69,29 @@ export default function App() {
       window.removeEventListener('dragover', preventDefault);
       window.removeEventListener('drop', preventDefault);
     };
-  }, [darkMode]);
+  }, []);
 
   const handleFiles = async (newFiles: File[]) => {
     if (newFiles.length === 0) return;
     setFiles(newFiles);
     
     // Analyze pages if tool requires it
-    if (selectedTool?.category === 'PDF' && (selectedTool.id === 'split-pdf' || selectedTool.id === 'organize-pdf')) {
-      const count = await pdfService.getPageCount(newFiles[0]);
-      setPageCount(count);
-      setOrganizeOrder(Array.from({ length: count }, (_, i) => i));
-      setSelectedPages([]);
-      setSplitGroups([{ id: 'g1', pages: [] }]);
+    const isPDFAction = selectedTool?.id === 'split-pdf' || selectedTool?.id === 'organize-pdf' || selectedTool?.id === 'pdf-to-jpg' || selectedTool?.id === 'pdf-to-png';
+    
+    if (selectedTool?.category === 'PDF' && isPDFAction) {
+      try {
+        const count = await pdfService.getPageCount(newFiles[0]);
+        setPageCount(count);
+        setOrganizeOrder(Array.from({ length: count }, (_, i) => i));
+        setSelectedPages([]);
+        setSplitGroups([{ id: 'g1', pages: [] }]);
+        
+        // Generate actual page thumbnails
+        const renderedThumbnails = await pdfService.getPageThumbnails(newFiles[0]);
+        setThumbnails(renderedThumbnails);
+      } catch (e) {
+        console.error("Error reading PDF metadata:", e);
+      }
     }
     setStep('options');
   };
@@ -97,6 +111,16 @@ export default function App() {
           const fn = selectedTool.id === 'jpg-to-pdf' ? pdfService.jpgToPdf : pdfService.pngToPdf;
           const data = await fn.call(pdfService, files, compression);
           processedResults.push({ name: baseName + '.pdf', data, type: 'application/pdf', size: data.length });
+          break;
+        }
+        case 'pdf-to-jpg':
+        case 'pdf-to-png': {
+          const format = selectedTool.id === 'pdf-to-jpg' ? 'jpeg' : 'png';
+          const mime = selectedTool.id === 'pdf-to-jpg' ? 'image/jpeg' : 'image/png';
+          const outputs = await pdfService.pdfToImages(files[0], format, compression);
+          outputs.forEach(out => {
+            processedResults.push({ name: `${baseName}_${out.name}`, data: out.data, type: mime, size: out.data.length });
+          });
           break;
         }
         case 'merge-pdf': {
@@ -131,6 +155,7 @@ export default function App() {
       setResults(processedResults);
       setStep('done');
     } catch (err) {
+      console.error(err);
       alert('Processing failed. Please try a valid file.');
       setStep('options');
     } finally {
@@ -165,6 +190,7 @@ export default function App() {
             tool={selectedTool} 
             files={files}
             pageCount={pageCount}
+            thumbnails={thumbnails}
             compression={compression}
             setCompression={setCompression}
             customName={customName}
@@ -185,7 +211,7 @@ export default function App() {
         {step === 'done' && (
           <ResultView 
             results={results} 
-            onReset={() => { setStep('category'); setFiles([]); setResults([]); setCustomName(''); }} 
+            onReset={() => { setStep('category'); setFiles([]); setResults([]); setCustomName(''); setThumbnails([]); }} 
           />
         )}
       </AnimatePresence>
