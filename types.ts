@@ -1,7 +1,9 @@
 
 export type ToolCategory = 'JPG' | 'PNG' | 'PDF';
 
-export type CompressionLevel = 'low' | 'medium' | 'high';
+export type CompressionLevel = 'none' | 'low' | 'medium' | 'high';
+
+export type PageSize = 'original' | 'A4' | 'letter';
 
 export interface PDFTool {
   id: string;
