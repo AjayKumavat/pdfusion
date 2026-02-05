@@ -1,82 +1,20 @@
-# 💙 PDFusion
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-A modern, fast, and beautiful web app to manage, convert, compress, and organize PDFs and images — inspired by tools like *I Love PDF*, but built fresh with a unique UI and smooth UX.
+# Run and deploy your AI Studio app
 
----
+This contains everything you need to run your app locally.
 
-## 🚀 Tech Stack
+View your app in AI Studio: https://ai.studio/apps/drive/1hcIYhSH0yEEFirziqkgorkUTNY-F2mWQ
 
-- **Frontend:** React (TypeScript)
-- **Build Tool:** Vite
-- **Styling:** Modern responsive UI (Light & Dark Mode)
-- **Architecture:** Component-based, scalable structure
+## Run Locally
 
----
+**Prerequisites:**  Node.js
 
-## ✨ Features
 
-### 📁 File Conversions
-- **JPG → PDF** (with compression)
-- **PDF → JPG** (with compression)
-- **PNG → PDF** (with compression)
-- **PDF → PNG** (with compression)
-
-### 📄 PDF Tools
-- **Merge PDFs** (with compression)
-- **Split PDFs** (with compression)
-- **Compress PDF**
-- **Organize PDF pages** (reorder, remove pages)
-
-### 🗜 Compression Options
-For every supported operation:
-- **Low**
-- **Medium**
-- **High**
-
-➡️ Shows **estimated file size after compression** before download.
-
-### 🧭 Smart Navigation Flow
-1. Select file type (**PNG / JPG / PDF**)
-2. View relevant actions
-3. Upload files
-4. Click **Next**
-5. Choose compression (if applicable)
-6. Rename output file (optional)
-7. Download instantly
-
----
-
-## 📱 Responsive Design
-
-- Fully **mobile responsive**
-- Optimized for **all screen sizes**
-- Smooth transitions and modern UI
-- **Light & Dark Mode** support
-
----
-
-## 🎨 Design Philosophy
-
-- Clean
-- Minimal
-- Fast
-- User-friendly
-- Inspired by *I Love PDF*, but **not a clone**
-- Focused on clarity and ease of use
-
----
-
-## 🛠 Setup & Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/AjayKumavat/pdfusion.git
-
-# Navigate to project folder
-cd pdfusion
-
-# Install dependencies
-npm install
-
-# Run development server
-npm run dev
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

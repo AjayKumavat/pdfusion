@@ -83,8 +83,9 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
   const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
   const [draggedOriginalIndex, setDraggedOriginalIndex] = useState<number | null>(null);
   
-  // Track grid item layout snapshots
-  const itemLayouts = useRef<{ id: number; rect: DOMRect }[]>([]);
+  const itemLayouts = useRef<{ id: number; rect: { left: number, top: number, width: number, height: number } }[]>([]);
+  const scrollInterval = useRef<number | null>(null);
+  const currentScrollSpeed = useRef<number>(0);
 
   const totalSize = props.files.reduce((acc, f) => acc + f.size, 0);
   const isImageToPdf = props.tool?.id === 'jpg-to-pdf' || props.tool?.id === 'png-to-pdf';
@@ -137,40 +138,97 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
   };
 
   /**
-   * Handle the start of a drag session by capturing all slot positions.
-   * This prevents the "moving target" issue.
+   * Dampened Scroll Engine with Boundary Awareness
    */
+  const handleAutoScroll = (pointerY: number) => {
+    const threshold = 100; // Trigger area size
+    const maxSpeed = 5;    // Reduced for smoothness
+    let speed = 0;
+    
+    const scrollY = window.scrollY;
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+
+    // Upward logic with check for document top
+    if (pointerY < threshold && scrollY > 0) {
+        const factor = (threshold - pointerY) / threshold;
+        speed = -Math.max(1, factor * maxSpeed);
+    } 
+    // Downward logic with check for document bottom
+    else if (pointerY > window.innerHeight - threshold && scrollY < maxScroll) {
+        const factor = (pointerY - (window.innerHeight - threshold)) / threshold;
+        speed = Math.max(1, factor * maxSpeed);
+    }
+
+    currentScrollSpeed.current = speed;
+
+    if (speed !== 0) {
+        if (!scrollInterval.current) {
+            const step = () => {
+                if (currentScrollSpeed.current !== 0) {
+                    // Precision check before scroll
+                    const nowY = window.scrollY;
+                    if (currentScrollSpeed.current < 0 && nowY <= 0) {
+                        currentScrollSpeed.current = 0;
+                        return;
+                    }
+                    if (currentScrollSpeed.current > 0 && nowY >= maxScroll) {
+                        currentScrollSpeed.current = 0;
+                        return;
+                    }
+
+                    window.scrollBy(0, currentScrollSpeed.current);
+                    scrollInterval.current = requestAnimationFrame(step);
+                } else {
+                    scrollInterval.current = null;
+                }
+            };
+            scrollInterval.current = requestAnimationFrame(step);
+        }
+    } else {
+        if (scrollInterval.current) {
+            cancelAnimationFrame(scrollInterval.current);
+            scrollInterval.current = null;
+        }
+    }
+  };
+
   const handleDragStart = (originalIndex: number) => {
     setDraggedOriginalIndex(originalIndex);
     if (!gridContainerRef.current) return;
     
     const items = Array.from(gridContainerRef.current.querySelectorAll('.organize-item-container')) as HTMLElement[];
-    itemLayouts.current = items.map((item, idx) => ({
-      id: props.organizeOrder[idx],
-      rect: item.getBoundingClientRect()
-    }));
+    itemLayouts.current = items.map((item, idx) => {
+      const rect = item.getBoundingClientRect();
+      return {
+        id: props.organizeOrder[idx],
+        rect: {
+            left: rect.left,
+            top: rect.top + window.scrollY,
+            width: rect.width,
+            height: rect.height
+        }
+      };
+    });
   };
 
-  /**
-   * Determine target slot using a coordinate-based snapshot lookup.
-   */
   const handleGridDrag = (originalIndex: number, info: any) => {
     if (!gridContainerRef.current || itemLayouts.current.length === 0) return;
 
+    handleAutoScroll(info.point.y);
+
     const currentSeqIndex = props.organizeOrder.indexOf(originalIndex);
-    const pointerX = info.point.x;
-    const pointerY = info.point.y;
+    const docPointerX = info.point.x;
+    const docPointerY = info.point.y + window.scrollY;
 
     let targetSeqIndex = currentSeqIndex;
     let minDistance = Infinity;
 
-    // Use the static snapshots to find the closest slot
     itemLayouts.current.forEach((layout, i) => {
       const centerX = layout.rect.left + layout.rect.width / 2;
       const centerY = layout.rect.top + layout.rect.height / 2;
 
       const distance = Math.sqrt(
-        Math.pow(pointerX - centerX, 2) + Math.pow(pointerY - centerY, 2)
+        Math.pow(docPointerX - centerX, 2) + Math.pow(docPointerY - centerY, 2)
       );
 
       if (distance < minDistance) {
@@ -179,9 +237,8 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
       }
     });
 
-    // Distance threshold: pointer must be within reasonable distance of the target slot center
     const targetRect = itemLayouts.current[targetSeqIndex].rect;
-    const threshold = Math.max(targetRect.width, targetRect.height);
+    const threshold = Math.max(targetRect.width, targetRect.height) * 0.75;
 
     if (targetSeqIndex !== currentSeqIndex && minDistance < threshold) {
       const nextOrder = reorder(props.organizeOrder, currentSeqIndex, targetSeqIndex);
@@ -189,9 +246,18 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
     }
   };
 
+  const handleDragEnd = () => {
+    setDraggedOriginalIndex(null);
+    currentScrollSpeed.current = 0;
+    if (scrollInterval.current) {
+        cancelAnimationFrame(scrollInterval.current);
+        scrollInterval.current = null;
+    }
+  };
+
   return (
-    <motion.div key="options" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full pb-24 sm:pb-0">
-      <div className="flex items-center mb-6 sm:mb-10 sticky top-16 z-40 bg-white/50 dark:bg-slate-950/50 backdrop-blur-md py-4 sm:py-0 border-b border-slate-100 dark:border-slate-800 sm:border-none">
+    <motion.div key="options" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full pb-48 sm:pb-0">
+      <div className="flex items-center mb-6 sm:mb-10 sticky top-16 z-[80] bg-white/50 dark:bg-slate-950/50 backdrop-blur-md py-4 sm:py-0 border-b border-slate-100 dark:border-slate-800 sm:border-none">
         <button onClick={props.onBack} className="mr-4 sm:mr-6 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl text-slate-700 dark:text-slate-300 hover:border-indigo-500 transition-colors shadow-sm">
           <LucideIcons.ArrowLeft size={20} />
         </button>
@@ -215,7 +281,7 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
               <div className="flex items-center gap-3">
                 <div className="bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
                   <span className="text-[9px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest flex items-center gap-1.5">
-                    <LucideIcons.Info size={12} /> {isOrganizeMode ? 'Seamless Drag & Drop' : 'Click to inspect quality'}
+                    <LucideIcons.Layers size={12} /> {isOrganizeMode ? 'Velocity-Dampened Reordering' : 'Click to inspect quality'}
                   </span>
                 </div>
               </div>
@@ -225,7 +291,7 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
               <div className="bg-slate-50 dark:bg-slate-950/40 p-4 sm:p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
                 <div 
                   ref={gridContainerRef}
-                  className="organize-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 sm:gap-10 relative min-h-[450px]"
+                  className="organize-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-10 relative min-h-[450px]"
                 >
                   {props.organizeOrder.map((originalIndex, currentSeq) => (
                     <div key={originalIndex} className="organize-item-container flex flex-col items-center">
@@ -233,24 +299,24 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
                         layout
                         drag
                         dragSnapToOrigin
-                        dragElastic={0.05}
+                        dragElastic={0}
                         onDragStart={() => handleDragStart(originalIndex)}
                         onDrag={(e, info) => handleGridDrag(originalIndex, info)}
-                        onDragEnd={() => setDraggedOriginalIndex(null)}
+                        onDragEnd={handleDragEnd}
                         whileDrag={{ 
-                          scale: 1.15, 
-                          zIndex: 100, 
-                          rotate: 2,
+                          scale: 1.05, 
+                          zIndex: 50, // Strictly below headers (80/100)
+                          rotate: 1,
                           cursor: 'grabbing',
-                          boxShadow: "0 40px 80px -15px rgba(79, 70, 229, 0.5)"
+                          boxShadow: "0 50px 100px -20px rgba(79, 70, 229, 0.4)"
                         }}
                         transition={{ 
-                          layout: { type: "spring", stiffness: 500, damping: 40 },
-                          default: { duration: 0.15 }
+                          layout: { type: "spring", stiffness: 700, damping: 50 },
+                          default: { duration: 0.05 }
                         }}
                         className={`organize-item relative cursor-grab group w-full ${draggedOriginalIndex === originalIndex ? 'z-50' : 'z-10'}`}
                       >
-                        <div className={`relative w-full aspect-[1/1.4] bg-white dark:bg-slate-900 border-2 rounded-2xl overflow-hidden shadow-lg flex items-center justify-center p-2 transition-all duration-300 ${draggedOriginalIndex === originalIndex ? 'border-indigo-500 ring-8 ring-indigo-500/10' : 'border-slate-200 dark:border-slate-800 group-hover:border-indigo-400'}`}>
+                        <div className={`relative w-full aspect-[1/1.4] bg-white dark:bg-slate-900 border-2 rounded-2xl overflow-hidden shadow-lg flex items-center justify-center p-1 sm:p-2 transition-all duration-300 ${draggedOriginalIndex === originalIndex ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-800 group-hover:border-indigo-400'}`}>
                           {previewOriginals[originalIndex] ? (
                             <img 
                               src={previewOriginals[originalIndex]} 
@@ -261,28 +327,18 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
                             <LucideIcons.File size={32} className="opacity-10" />
                           )}
                           
-                          <div className="absolute top-2 left-2 w-8 h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center text-[10px] font-black shadow-xl border border-white/20">
+                          <div className="absolute top-1 left-1 sm:top-2 sm:left-2 w-6 h-6 sm:w-8 sm:h-8 bg-indigo-600 text-white rounded-lg flex items-center justify-center text-[8px] sm:text-[10px] font-black shadow-xl border border-white/20">
                             {currentSeq + 1}
                           </div>
                           
-                          <div className="absolute bottom-2 right-2 px-2 py-1 bg-slate-900/80 backdrop-blur-md text-white font-black text-[9px] uppercase rounded-md border border-white/10">
+                          <div className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 px-1.5 py-0.5 sm:px-2 sm:py-1 bg-slate-900/80 backdrop-blur-md text-white font-black text-[7px] sm:text-[9px] uppercase rounded-md border border-white/10">
                             P{originalIndex + 1}
-                          </div>
-                          
-                          <div className="absolute inset-0 bg-indigo-600/5 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                             <LucideIcons.GripVertical size={24} className="text-indigo-600 drop-shadow-md" />
                           </div>
                         </div>
                       </motion.div>
                       
-                      {/* Stable label outside the animated drag block to prevent visual glitches */}
-                      <div className="mt-4 h-6 flex items-center justify-center w-full overflow-hidden">
-                        <motion.span 
-                          layout
-                          className="text-[9px] font-black text-slate-400 uppercase tracking-widest"
-                        >
-                          Position {currentSeq + 1}
-                        </motion.span>
+                      <div className="mt-2 sm:mt-4 h-6 flex items-center justify-center w-full">
+                        <motion.span layout className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Slot {currentSeq + 1}</motion.span>
                       </div>
                     </div>
                   ))}
@@ -291,37 +347,16 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-10 bg-slate-50 dark:bg-slate-950/40 p-6 sm:p-10 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
                 {(isImageToPdf ? props.files : Array.from({ length: props.pageCount })).map((_, i) => (
-                  <motion.button
-                    key={i}
-                    whileHover={{ scale: 1.02, y: -4 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => setComparingIndex(i)}
-                    className="flex flex-col items-center group"
-                  >
-                    <div 
-                      className={`relative w-full shadow-lg dark:shadow-none bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 transition-all duration-500 flex items-center justify-center p-2 sm:p-4 group-hover:border-indigo-500 ${
-                        isImageToPdf && props.pageSize === 'A4' ? 'aspect-[210/297]' : 
-                        isImageToPdf && props.pageSize === 'letter' ? 'aspect-[216/279]' : 
-                        'aspect-[1/1.4] rounded-2xl'
-                      }`}
-                    >
+                  <motion.button key={i} whileHover={{ scale: 1.02, y: -4 }} whileTap={{ scale: 0.98 }} onClick={() => setComparingIndex(i)} className="flex flex-col items-center group">
+                    <div className="relative w-full aspect-[1/1.4] rounded-2xl shadow-lg dark:shadow-none bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-800 transition-all duration-500 flex items-center justify-center p-2 sm:p-4 group-hover:border-indigo-500">
                       {previewOriginals[i] ? (
                         <img src={previewOriginals[i]} className="max-w-full max-h-full object-contain opacity-90 group-hover:opacity-100 transition-opacity" alt={`Page ${i+1}`} />
                       ) : (
-                        <div className="flex flex-col items-center opacity-10 animate-pulse">
-                          <LucideIcons.File size={40} />
-                        </div>
+                        <div className="flex flex-col items-center opacity-10 animate-pulse"><LucideIcons.File size={40} /></div>
                       )}
-                      
-                      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-6 h-6 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                        <LucideIcons.ZoomIn size={18} />
-                      </div>
-                      
+                      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 w-6 h-6 sm:w-10 sm:h-10 bg-indigo-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"><LucideIcons.ZoomIn size={18} /></div>
                       <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-slate-800/80 backdrop-blur-md text-white font-black text-[8px] sm:text-[10px] uppercase rounded-md">Page {i + 1}</div>
                     </div>
-                    <span className="mt-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] group-hover:text-indigo-500 transition-colors">
-                      Inspect Quality
-                    </span>
                   </motion.button>
                 ))}
               </div>
@@ -332,39 +367,10 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
         <div className="lg:col-span-4">
           <div className="bg-white dark:bg-slate-900 p-5 sm:p-10 rounded-3xl sm:rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl lg:sticky lg:top-24">
             <h3 className="hidden sm:block text-2xl font-black mb-10 text-slate-900 dark:text-white tracking-tight">Processing Panel</h3>
-            
-            {props.tool?.hasCompression && (
-              <div className="mb-6 sm:mb-8">
-                <label className="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 sm:mb-5">Quality Target</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-1 gap-2 sm:gap-3">
-                  {(['none', 'low', 'medium', 'high'] as CompressionLevel[]).map((level) => (
-                    <button key={level} onClick={() => props.setCompression(level)} className={`w-full p-2.5 sm:p-6 rounded-xl sm:rounded-3xl border-2 text-center lg:text-left transition-all ${props.compression === level ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 shadow-md sm:shadow-xl' : 'border-slate-100 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500'}`}>
-                      <div className="font-black capitalize text-[10px] sm:text-xl tracking-tight">{level === 'none' ? 'Maximum' : level}</div>
-                      <div className="hidden sm:block text-[10px] font-black uppercase opacity-50 mt-1 tracking-widest">Est: {calculateEstimate(level)} MB</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {isImageToPdf && (
-              <div className="mb-6 sm:mb-8">
-                <label className="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 sm:mb-5">Page Size</label>
-                <div className="grid grid-cols-3 lg:grid-cols-1 gap-2 sm:gap-3">
-                  {(['original', 'A4', 'letter'] as PageSize[]).map((size) => (
-                    <button key={size} onClick={() => props.setPageSize(size)} className={`w-full p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border-2 text-center lg:text-left transition-all ${props.pageSize === size ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 shadow-md' : 'border-slate-100 dark:border-slate-800 hover:border-indigo-500'}`}>
-                      <div className="font-black capitalize text-[10px] sm:text-lg tracking-tight">{size}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="mb-6 sm:mb-12">
               <label className="block text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2 sm:mb-4">Result Filename</label>
               <input type="text" placeholder="Result_Name" value={props.customName} onChange={(e) => props.setCustomName(e.target.value)} className="w-full p-3 sm:p-6 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-xl sm:rounded-3xl focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-600 outline-none transition-all font-black text-slate-800 dark:text-white text-sm sm:text-lg" />
             </div>
-
             <button onClick={props.onProcess} className="hidden lg:flex w-full py-7 bg-indigo-600 text-white rounded-[2.5rem] text-2xl font-black hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-600/40 items-center justify-center space-x-3 group active:scale-95">
               <span>Process Files</span>
               <LucideIcons.ArrowRight size={28} className="group-hover:translate-x-2 transition-transform" />
@@ -373,62 +379,29 @@ export const OptionsView: React.FC<OptionsViewProps> = (props) => {
         </div>
       </div>
 
-      <div className="lg:hidden fixed bottom-4 left-4 right-4 z-50">
+      <div className="lg:hidden fixed bottom-4 left-4 right-4 z-[95]">
         <button onClick={props.onProcess} className="w-full py-4 bg-indigo-600 text-white rounded-2xl text-lg font-black hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-600/40 flex items-center justify-center space-x-2 active:scale-95"><span>Process Files</span><LucideIcons.ArrowRight size={20} /></button>
       </div>
 
       <AnimatePresence>
         {comparingIndex !== null && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-10 backdrop-blur-3xl bg-slate-950/80"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="w-full max-w-6xl flex flex-col"
-            >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-10 backdrop-blur-3xl bg-slate-950/80">
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="w-full max-w-6xl flex flex-col">
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h3 className="text-2xl sm:text-4xl font-black text-white tracking-tighter uppercase">Quality Inspector</h3>
-                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">
-                    Analyzing: {isImageToPdf ? props.files[comparingIndex]?.name : `Page ${comparingIndex + 1}`}
-                  </p>
+                  <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Analyzing: {isImageToPdf ? props.files[comparingIndex]?.name : `Page ${comparingIndex + 1}`}</p>
                 </div>
-                <button onClick={() => setComparingIndex(null)} className="w-14 h-14 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors">
-                  <LucideIcons.X size={28} />
-                </button>
+                <button onClick={() => setComparingIndex(null)} className="w-14 h-14 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"><LucideIcons.X size={28} /></button>
               </div>
-
-              {previewResults[comparingIndex] ? (
-                <ComparisonSlider 
-                  original={previewOriginals[comparingIndex]} 
-                  compressed={previewResults[comparingIndex]} 
-                />
-              ) : (
+              {previewResults[comparingIndex] ? (<ComparisonSlider original={previewOriginals[comparingIndex]} compressed={previewResults[comparingIndex]} />) : (
                 <div className="h-[60vh] bg-white/5 rounded-[3rem] flex flex-col items-center justify-center space-y-4 border-2 border-white/5">
                   <LucideIcons.Loader2 className="animate-spin text-indigo-500" size={56} />
                   <span className="text-slate-400 font-black uppercase text-[10px] tracking-[0.3em]">Rendering Fidelity...</span>
                 </div>
               )}
-
               <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-6">
-                 <div className="flex bg-white/5 p-1.5 rounded-[1.5rem] border border-white/10 overflow-x-auto max-w-full">
-                    {(['none', 'low', 'medium', 'high'] as CompressionLevel[]).map(level => (
-                      <button
-                        key={level}
-                        onClick={() => props.setCompression(level)}
-                        className={`px-6 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all whitespace-nowrap ${props.compression === level ? 'bg-indigo-600 text-white shadow-xl scale-105' : 'text-slate-400 hover:text-white'}`}
-                      >
-                        {level === 'none' ? 'Max Quality' : level}
-                      </button>
-                    ))}
-                 </div>
-                 <button 
-                    onClick={() => setComparingIndex(null)}
-                    className="w-full sm:w-auto px-12 py-5 bg-white text-slate-950 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] hover:bg-indigo-50 active:scale-95 transition-all shadow-2xl"
-                 >
-                   Confirm Selection
-                 </button>
+                 <button onClick={() => setComparingIndex(null)} className="w-full sm:w-auto px-12 py-5 bg-white text-slate-950 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] hover:bg-indigo-50 active:scale-95 transition-all shadow-2xl">Confirm Selection</button>
               </div>
             </motion.div>
           </motion.div>

@@ -10,10 +10,9 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children, darkMode, onToggleTheme }) => (
   <div className="min-h-screen flex flex-col pt-16 transition-colors duration-300">
-    {/* Header */}
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
+    {/* Header - Increased z-index to 100 to stay above dragged items */}
+    <header className="fixed top-0 left-0 right-0 z-[100] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 transition-colors duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Hide placeholder on mobile to keep logo centered */}
         <div className="w-10 sm:hidden"></div>
 
         <div 
