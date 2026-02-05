@@ -6,7 +6,8 @@ import {
   ToolCategory, 
   PDFTool, 
   CompressionLevel, 
-  ProcessedFile 
+  ProcessedFile,
+  PageSize
 } from './types';
 import { TOOLS } from './constants';
 import { pdfService } from './services/pdfService';
@@ -37,6 +38,7 @@ export default function App() {
   const [selectedTool, setSelectedTool] = useState<PDFTool | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [compression, setCompression] = useState<CompressionLevel>('medium');
+  const [pageSize, setPageSize] = useState<PageSize>('original');
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<ProcessedFile[]>([]);
   const [customName, setCustomName] = useState('');
@@ -109,7 +111,7 @@ export default function App() {
         case 'jpg-to-pdf':
         case 'png-to-pdf': {
           const fn = selectedTool.id === 'jpg-to-pdf' ? pdfService.jpgToPdf : pdfService.pngToPdf;
-          const data = await fn.call(pdfService, files, compression);
+          const data = await fn.call(pdfService, files, compression, pageSize);
           processedResults.push({ name: baseName + '.pdf', data, type: 'application/pdf', size: data.length });
           break;
         }
@@ -193,6 +195,8 @@ export default function App() {
             thumbnails={thumbnails}
             compression={compression}
             setCompression={setCompression}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
             customName={customName}
             setCustomName={setCustomName}
             splitMode={splitMode}

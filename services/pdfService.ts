@@ -1,6 +1,6 @@
 
-import { PDFDocument } from 'pdf-lib';
-import { CompressionLevel } from '../types';
+import { PDFDocument, PageSizes } from 'pdf-lib';
+import { CompressionLevel, PageSize } from '../types';
 import * as pdfjs from 'pdfjs-dist';
 
 // Configure worker for PDF.js
@@ -36,30 +36,70 @@ export const pdfService = {
     return thumbnails;
   },
 
-  async jpgToPdf(files: File[], compression: CompressionLevel): Promise<Uint8Array> {
+  async jpgToPdf(files: File[], compression: CompressionLevel, pageSize: PageSize = 'original'): Promise<Uint8Array> {
     const pdfDoc = await PDFDocument.create();
-    const quality = compression === 'low' ? 0.8 : compression === 'medium' ? 0.4 : 0.1;
+    const quality = compression === 'none' ? 1.0 : compression === 'low' ? 0.8 : compression === 'medium' ? 0.4 : 0.1;
 
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
       const compressedBuffer = await this.compressImage(arrayBuffer, file.type, quality);
       const image = await pdfDoc.embedJpg(compressedBuffer);
-      const page = pdfDoc.addPage([image.width, image.height]);
-      page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+      
+      let width = image.width;
+      let height = image.height;
+      let pageWidth = width;
+      let pageHeight = height;
+
+      if (pageSize !== 'original') {
+        const standardSize = pageSize === 'A4' ? PageSizes.A4 : PageSizes.Letter;
+        pageWidth = standardSize[0];
+        pageHeight = standardSize[1];
+
+        // Fit image into page maintaining aspect ratio
+        const scale = Math.min(pageWidth / width, pageHeight / height);
+        width = width * scale;
+        height = height * scale;
+      }
+
+      const page = pdfDoc.addPage([pageWidth, pageHeight]);
+      const x = (pageWidth - width) / 2;
+      const y = (pageHeight - height) / 2;
+      
+      page.drawImage(image, { x, y, width, height });
     }
     return await pdfDoc.save();
   },
 
-  async pngToPdf(files: File[], compression: CompressionLevel): Promise<Uint8Array> {
+  async pngToPdf(files: File[], compression: CompressionLevel, pageSize: PageSize = 'original'): Promise<Uint8Array> {
     const pdfDoc = await PDFDocument.create();
-    const quality = compression === 'low' ? 0.8 : compression === 'medium' ? 0.4 : 0.1;
+    const quality = compression === 'none' ? 1.0 : compression === 'low' ? 0.8 : compression === 'medium' ? 0.4 : 0.1;
 
     for (const file of files) {
       const arrayBuffer = await file.arrayBuffer();
+      // PNGs are converted to JPG for embedding. Quality 1.0 for 'none' to maintain fidelity.
       const compressedBuffer = await this.compressImage(arrayBuffer, 'image/jpeg', quality);
       const image = await pdfDoc.embedJpg(compressedBuffer);
-      const page = pdfDoc.addPage([image.width, image.height]);
-      page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+      
+      let width = image.width;
+      let height = image.height;
+      let pageWidth = width;
+      let pageHeight = height;
+
+      if (pageSize !== 'original') {
+        const standardSize = pageSize === 'A4' ? PageSizes.A4 : PageSizes.Letter;
+        pageWidth = standardSize[0];
+        pageHeight = standardSize[1];
+
+        const scale = Math.min(pageWidth / width, pageHeight / height);
+        width = width * scale;
+        height = height * scale;
+      }
+
+      const page = pdfDoc.addPage([pageWidth, pageHeight]);
+      const x = (pageWidth - width) / 2;
+      const y = (pageHeight - height) / 2;
+
+      page.drawImage(image, { x, y, width, height });
     }
     return await pdfDoc.save();
   },
@@ -70,8 +110,8 @@ export const pdfService = {
     const pdf = await loadingTask.promise;
     const results: { name: string, data: Uint8Array }[] = [];
 
-    const scaleMap = { low: 2.0, medium: 1.5, high: 1.0 };
-    const qualityMap = { low: 0.9, medium: 0.7, high: 0.4 };
+    const scaleMap = { none: 2.0, low: 2.0, medium: 1.5, high: 1.0 };
+    const qualityMap = { none: 1.0, low: 0.9, medium: 0.7, high: 0.4 };
     const scale = scaleMap[compression];
     const quality = qualityMap[compression];
 
@@ -126,11 +166,9 @@ export const pdfService = {
     const pdf = await loadingTask.promise;
     const newDoc = await PDFDocument.create();
     
-    // Low: High quality, original size. 
-    // Medium: Balanced scale and quality.
-    // High: Aggressive downscaling and lower quality.
-    const scaleMap = { low: 1.5, medium: 1.0, high: 0.75 };
-    const qualityMap = { low: 0.8, medium: 0.5, high: 0.2 };
+    // Scale and quality mapping including 'none'
+    const scaleMap = { none: 2.0, low: 1.5, medium: 1.0, high: 0.75 };
+    const qualityMap = { none: 1.0, low: 0.8, medium: 0.5, high: 0.2 };
     
     const scale = scaleMap[compression];
     const quality = qualityMap[compression];
@@ -174,6 +212,7 @@ export const pdfService = {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
+        // For 'none' quality (1.0), we skip downscaling
         const scale = quality < 0.2 ? 0.7 : 1.0;
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
