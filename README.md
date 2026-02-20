@@ -4,6 +4,12 @@ A modern, fast, and beautiful web app to manage, convert, compress, and organize
 
 ---
 
+## 🚀 Live Demo
+
+[![Live Demo](https://img.shields.io/badge/LIVE%20DEMO-OPEN%20APP-00C853?style=for-the-badge&logo=vercel&logoColor=white)](https://pdfusion-go3c0bp7y-ajay-kumawats-projects-49c4d391.vercel.app/)
+
+---
+
 ## 🚀 Tech Stack
 
 - **Frontend:** React (TypeScript)
